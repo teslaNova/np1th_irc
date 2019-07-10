@@ -3,7 +3,9 @@ use std::error::Error;
 use crate::mode;
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Mode {}
+pub enum Mode {
+    Limit { value: usize },
+}
 
 impl mode::Parseable for Mode {
     type Target = Self;
