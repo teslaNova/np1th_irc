@@ -13,15 +13,12 @@ fn main() -> Result<(), Box<std::error::Error>> {
         stream
             .send(Nick {
                 name: format!("avon1a"),
-            })
-            .and_then(|_| {
-                stream.send(User {
-                    name: format!("~avon1"),
-                    real_name: format!("whaterver"),
-                    modes: Vec::new(),
-                })
-            })
-            .expect("Something went wrong while trying to register with server");
+            })?
+            .send(User {
+                name: format!("~avon1"),
+                real_name: format!("whaterver"),
+                modes: Vec::new(),
+            })?;
 
         for message in stream.iter() {
             if message.is_none() {
