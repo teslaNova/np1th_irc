@@ -10,7 +10,7 @@ pub const PREFIX: char = ':';
 pub const IDENT_SEPARATOR: char = '!';
 pub const HOST_SEPARATOR: char = '@';
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 /// Represents the IRC prefix
 pub enum Origin {
     Connection,
@@ -88,11 +88,48 @@ impl Origin {
 }
 
 impl Origin {
-    pub fn nick(&self) -> Option<&String> {
+    pub fn nick(&self) -> Option<&str> {
         if let Origin::User { ref nick, .. } = self {
-            Some(nick)
+            Some(&nick)
         } else {
             None
+        }
+    }
+
+    pub fn user(&self) -> Option<&str> {
+        match self {
+            Origin::User { ref user, .. } if user.is_some() => user.as_ref().map(|s| s.as_str()),
+            _ => None,
+        }
+    }
+
+    pub fn host(&self) -> Option<&str> {
+        match self {
+            Origin::User { ref host, .. } if host.is_some() => host.as_ref().map(|s| s.as_str()),
+            _ => None,
+        }
+    }
+}
+
+impl Origin {
+    pub fn is_user(&self) -> bool {
+        match self {
+            Origin::User { .. } => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_server(&self) -> bool {
+        match self {
+            Origin::Server { .. } => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_connection(&self) -> bool {
+        match self {
+            Origin::Connection => true,
+            _ => false,
         }
     }
 }

@@ -96,20 +96,25 @@ impl<C> Stream<C>
         if self.message_queue.borrow().is_empty() {
             Ok(None)
         } else {
-            Ok(Some(self.message_queue.borrow_mut().remove(0)))
+            let message = self.message_queue.borrow_mut().remove(0);
+
+            println!("IN>  {:#?}", message.command());
+
+            Ok(Some(message))
         }
     }
 
-    pub fn send<T>(&self, msg_or_cmd: T) -> Result<(), Box<Error>>
+    pub fn send<T>(&self, msg_or_cmd: T) -> Result<&Self, Box<Error>>
                    where
                        T: ToMessage<C> + std::fmt::Debug,
     {
-        dbg!(&msg_or_cmd);
+        println!("OUT> {:#?}", msg_or_cmd);
+
         self.tcp_stream
             .borrow_mut()
             .write(msg_or_cmd.into_message().to_string().as_bytes())?;
 
-        Ok(())
+        Ok(self)
     }
 
     pub fn iter(&self) -> Iter<C> {

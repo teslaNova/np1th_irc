@@ -1,3 +1,4 @@
+#[macro_export]
 macro_rules! impl_error {
     ($error:ident {$($arg_name:ident: $arg_type:ty),*}) => {
         pub struct $error {
@@ -40,4 +41,11 @@ macro_rules! impl_error {
             }
         }
     }
+}
+
+pub trait Defaults
+    where
+        Self: Sized,
+{
+    fn defaults() -> Vec<Self>;
 }
