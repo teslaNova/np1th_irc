@@ -1,13 +1,13 @@
 extern crate np1th_irc;
 
-use std::{thread::sleep, time::Duration};
+use std::thread::yield_now;
 
 use np1th_irc::{command::client::Command::*, stream::ClientStream};
 
-fn main() {
+fn main() -> Result<(), Box<std::error::Error>> {
     println!("Trying to connect..");
 
-    if let Ok(mut stream) = ClientStream::connect("irc.freenode.org:6667") {
+    if let Ok(stream) = ClientStream::connect("irc.freenode.org:6667") {
         println!("Connected..");
 
         stream
@@ -23,41 +23,35 @@ fn main() {
             })
             .expect("Something went wrong while trying to register with server");
 
-        loop {
-            match stream.read() {
-                Ok(Some(message)) => {
-                    println!("{:?}", message);
+        for message in stream.iter() {
+            if message.is_none() {
+                yield_now();
+                continue;
+            }
 
-                    match message.command().clone() {
-                        Ping { server1, server2 } => {
-                            stream.send(Pong { server1, server2 });
-                        }
+            let message = message.unwrap();
+            println!("{:?}", message);
 
-                        PrivMsg { .. } => {
-                            let target = message.origin().nick().unwrap();
-
-                            stream.send(PrivMsg {
-                                text: format!("Hello {}!", target),
-                                targets: vec![target.clone()],
-                            });
-                        }
-
-                        _ => {}
-                    }
+            match message.command().clone() {
+                Ping { server1, server2 } => {
+                    stream.send(Pong { server1, server2 })?;
                 }
 
-                Ok(None) => {
-                    // No messages.. idle..
-                    sleep(Duration::from_millis(150));
+                PrivMsg { .. } => {
+                    let target = message.origin().nick().unwrap();
+
+                    stream.send(PrivMsg {
+                        text: format!("Hello {}!", target),
+                        targets: vec![target.to_string()],
+                    })?;
                 }
 
-                Err(e) => {
-                    eprintln!("Error while reading: {:?}", e);
-                    break;
-                }
+                _ => {}
             }
         }
     } else {
         println!("Unable to connect to remote host");
     }
+
+    Ok(())
 }
