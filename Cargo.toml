@@ -1,0 +1,7 @@
+[package]
+name = "np1th-irc"
+version = "0.1.0"
+authors = ["avonarret1"]
+edition = "2018"
+
+[dependencies]
