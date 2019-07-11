@@ -1,7 +1,7 @@
 extern crate np1th_irc;
 
 use np1th_irc::{
-    connection::client::Client,
+    connection::client::{Client, Port},
     user::User,
     origin::Origin,
 };
@@ -13,7 +13,7 @@ fn main() -> Result<(), Box<std::error::Error>> {
         host: None,
     }, "avonarret");
 
-    let client = Client::connect("irc.freenode.org:6667", myself, None)?;
+    let client = Client::connect("irc.freenode.org", Port::Secure(7000), myself, None)?;
     client.disconnect();
 
     Ok(())

@@ -3,13 +3,109 @@ use crate::{
     user::User,
     channel::Channel,
     server::Server,
+    origin::Origin,
     command::client::Command::{*, User as _User},
+    utils::Defaults,
 };
 
 use std::{
     net::ToSocketAddrs
 };
-use crate::origin::Origin;
+
+pub use crate::stream::Port;
+
+#[derive(Default)]
+pub struct Builder {
+    user: Option<User>,
+    //password: Option<String>,
+    host: String,
+
+    ports: Vec<Port>,
+    ports_filter: Vec<Box<Fn(&mut Vec<Port>)>>,
+}
+
+impl Builder {
+    pub fn user(mut self, user: User) -> Self {
+        // Is user origin correct?
+        self.user = Some(user);
+
+        self
+    }
+
+    pub fn host(mut self, host: &str) -> Self {
+        self.host = host.to_string();
+
+        self
+    }
+
+    pub fn ports(mut self, ports: Vec<Port>) -> Self {
+        self.ports = ports;
+
+        self
+    }
+
+    pub fn port(mut self, port: Port) -> Self {
+        self.ports.push(port);
+
+        self
+    }
+
+    pub fn secure_only(mut self) -> Self {
+        self.ports_filter.push(Box::new(move |ports| {
+            for i in ports.len()..0 {
+                if let Port::Insecure(_) = ports[i] {
+                    ports.remove(i);
+                }
+            }
+        }));
+
+        self
+    }
+
+    pub fn insecure_only(mut self) -> Self {
+        self.ports_filter.push(Box::new(move |ports| {
+            for i in ports.len()..0 {
+                if let Port::Secure(_) = ports[i] {
+                    ports.remove(i);
+                }
+            }
+        }));
+
+        self
+    }
+
+    pub fn priortize_secure(mut self) -> Self {
+        self.ports_filter.push(Box::new(move |ports| {
+            ports.sort_by(|c1, c2| {
+                if c1.secure() && c2.insecure() {
+                    std::cmp::Ordering::Greater
+                } else if c1.insecure() && c2.secure() {
+                    std::cmp::Ordering::Less
+                } else {
+                    std::cmp::Ordering::Equal
+                }
+            })
+        }));
+
+        self
+    }
+
+    pub fn priortize_insecure(mut self) -> Self {
+        self.ports_filter.push(Box::new(move |ports| {
+            ports.sort_by(|c1, c2| {
+                if c1.secure() && c2.insecure() {
+                    std::cmp::Ordering::Less
+                } else if c1.insecure() && c2.secure() {
+                    std::cmp::Ordering::Greater
+                } else {
+                    std::cmp::Ordering::Equal
+                }
+            })
+        }));
+
+        self
+    }
+}
 
 pub struct Client {
     stream: ClientStream,
@@ -23,8 +119,15 @@ pub mod error {
 }
 
 impl Client {
-    pub fn connect<A: ToSocketAddrs>(addr: A, myself: User, password: Option<&str>) -> Result<Self, Box<std::error::Error>> {
-        let stream = ClientStream::connect(addr)?;
+    pub fn builder() -> Builder {
+        Builder::default()
+    }
+}
+
+impl Client {
+    pub fn connect(host: &str, port: Port, myself: User, password: Option<&str>) -> Result<Self, Box<std::error::Error>> {
+        let stream = ClientStream::connect(host, port)?;
+
         let mut server_motd = String::new();
         let mut server_origin = None;
 
@@ -69,8 +172,8 @@ impl Client {
         })
     }
 
-    pub fn disconnect(mut self) {
-        self.stream.send(Quit {
+    pub fn disconnect(self) {
+        let _ = self.stream.send(Quit {
             reason: None
         });
 

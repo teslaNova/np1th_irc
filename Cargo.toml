@@ -5,3 +5,4 @@ authors = ["avonarret1"]
 edition = "2018"
 
 [dependencies]
+native-tls = "*"

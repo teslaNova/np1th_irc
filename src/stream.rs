@@ -7,19 +7,144 @@ use std::{
     cell::RefCell,
 };
 
+use native_tls::{
+    TlsConnector,
+    TlsStream,
+};
+
 use crate::{
     command::{client, server, Command},
     limits,
     message::{Message, ToMessage},
     END_OF_MESSAGE,
+    utils::Defaults,
 };
 
+#[derive(Debug)]
+pub enum Port {
+    Secure(u16),
+    Insecure(u16),
+}
+
+impl Port {
+    pub fn secure(&self) -> bool {
+        match self {
+            Port::Secure(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn insecure(&self) -> bool {
+        !self.secure()
+    }
+
+    pub fn port(&self) -> u16 {
+        if let Port::Secure(port) | Port::Insecure(port) = self {
+            return *port
+        }
+
+        unreachable!()
+    }
+}
+
+impl Defaults for Port {
+    fn defaults() -> Vec<Self> {
+        vec![
+            //Port::Insecure(194), // official. requires root privileges, so I'll ignore it..
+            Port::Insecure(6667), // in-official
+
+            Port::Secure(6697), // official
+            Port::Secure(7000), // in-official
+        ]
+    }
+}
+
+impl Into<u16> for Port {
+    fn into(self) -> u16 {
+        self.port()
+    }
+}
+
 type MessageQueue<C> = Vec<Message<C>>;
+type SecureTcpStream = TlsStream<TcpStream>;
+
+#[derive(Debug)]
+enum InnerStream {
+    Insecure(TcpStream),
+    Secure(SecureTcpStream),
+}
+
+impl InnerStream {
+    pub fn secure(&self) -> bool {
+        match self {
+            InnerStream::Insecure(_) => false,
+            InnerStream::Secure(_) => true,
+        }
+    }
+
+    pub fn insecure(&self) -> bool {
+        !self.secure()
+    }
+
+    pub fn tcp(&self) -> &TcpStream {
+        match self {
+            InnerStream::Insecure(ref stream) => stream,
+            InnerStream::Secure(ref secure_stream) => secure_stream.get_ref()
+        }
+    }
+
+    pub fn tcp_mut(&mut self) -> &mut TcpStream {
+        match self {
+            InnerStream::Insecure(ref mut stream) => stream,
+            InnerStream::Secure(ref mut secure_stream) => secure_stream.get_mut()
+        }
+    }
+
+    pub fn tls(&self) -> Option<&SecureTcpStream> {
+        match self {
+            InnerStream::Secure(ref secure_stream) => Some(secure_stream),
+            _ => None,
+        }
+    }
+
+    pub fn tls_mut(&mut self) -> Option<&mut SecureTcpStream> {
+        match self {
+            InnerStream::Secure(ref mut secure_stream) => Some(secure_stream),
+            _ => None,
+        }
+    }
+}
+
+impl std::io::Read for InnerStream {
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize, std::io::Error> {
+        match self {
+            InnerStream::Insecure(ref mut stream) => stream.read(buf),
+            InnerStream::Secure(ref mut secure_stream) => secure_stream.read(buf),
+        }
+    }
+}
+
+impl std::io::Write for InnerStream {
+    fn write(&mut self, buf: &[u8]) -> Result<usize, std::io::Error> {
+        match self {
+            InnerStream::Insecure(ref mut stream) => stream.write(buf),
+            InnerStream::Secure(ref mut secure_stream) => secure_stream.write(buf),
+        }
+    }
+
+    fn flush(&mut self) -> Result<(), std::io::Error> {
+        match self {
+            InnerStream::Insecure(ref mut stream) => stream.flush(),
+            InnerStream::Secure(ref mut secure_stream) => secure_stream.flush(),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct Stream<C> {
-    tcp_stream: RefCell<TcpStream>,
+    inner_stream: RefCell<InnerStream>,
     message_queue: RefCell<MessageQueue<C>>,
+    buffer: RefCell<String>,
 }
 
 pub type ClientStream = Stream<client::Command>;
@@ -29,45 +154,70 @@ impl<C> Stream<C>
     where
         C: Command,
 {
-    pub fn connect<A: ToSocketAddrs>(addr: A) -> Result<Self, Box<Error>> {
-        let tcp_stream = TcpStream::connect(addr)?;
+    pub fn connect(host: &str, port: Port) -> Result<Self, Box<Error>> {
+        let mut tcp_stream = TcpStream::connect((host, port.port()))?;
 
-        let _ = tcp_stream.set_nodelay(true);
-        let _ = tcp_stream.set_nonblocking(true);
+        let mut stream = if port.secure() {
+            let mut tls_stream = TlsConnector::builder()
+                .danger_accept_invalid_certs(true)
+                .danger_accept_invalid_hostnames(true)
+                .min_protocol_version(Some(native_tls::Protocol::Tlsv12))
+                .build()?
+                .connect(host, tcp_stream)?;
+
+            InnerStream::Secure(tls_stream)
+        } else {
+            InnerStream::Insecure(tcp_stream)
+        };
+
+        let _ = stream.tcp_mut().set_nodelay(true);
+        let _ = stream.tcp_mut().set_nonblocking(true);
 
         Ok(Stream {
-            tcp_stream: tcp_stream.into(),
+            inner_stream: stream.into(),
             message_queue: MessageQueue::new().into(),
+            buffer: format!("").into(),
         })
     }
 
     pub fn close(self) {
-        let _ = self.tcp_stream.borrow_mut().shutdown(Shutdown::Both);
+        if let Some(tls_stream) = self.inner_stream.borrow_mut().tls_mut() {
+            tls_stream.shutdown().expect("shutting down tls stream")
+        }
+
+        let _ = self.inner_stream.borrow_mut().tcp_mut().shutdown(Shutdown::Both);
     }
 
     pub fn set_timeout(&self, timeout: Duration) {
-        let _ = self.tcp_stream.borrow_mut().set_read_timeout(Some(timeout));
+        let _ = self.inner_stream.borrow_mut().tcp_mut().set_read_timeout(Some(timeout));
     }
 
     fn read_some(&self) -> Result<(), Box<Error>> {
-        let mut read_buffer = [0u8; 16 * limits::MESSAGE];
+        if self.buffer.borrow().len() < limits::MESSAGE {
+            let mut read_buffer = [0u8; 16 * limits::MESSAGE];
 
-        loop {
-            match self.tcp_stream.borrow_mut().peek(&mut read_buffer) {
-                Err(ref e) if e.kind() == WouldBlock => return Ok(()),
-                Err(e) => return Err(Box::new(e)),
-                _ => break,
+            match self.inner_stream.borrow_mut().read(&mut read_buffer) {
+                Ok(size) => {
+                    let enc = String::from_utf8_lossy(&read_buffer[..size]).to_string();
+                    self.buffer.borrow_mut().push_str(&enc);
+                }
+
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    return Ok(())
+                }
+
+                Err(e) => return Err(e.into())
             }
         }
 
-        let mut buffer = String::from_utf8_lossy(&read_buffer).to_string();
+        loop {
+            let line_end = if let Some(_line_end) = self.buffer.borrow().find(END_OF_MESSAGE) {
+                _line_end
+            } else {
+                break;
+            };
 
-        while let Some(line_end) = buffer.find(END_OF_MESSAGE) {
-            let line = buffer.drain(..line_end + 2).collect::<String>();
-
-            self.tcp_stream
-                .borrow_mut()
-                .read_exact(vec![0; line_end + 2].as_mut_slice())?;
+            let line = self.buffer.borrow_mut().drain(..line_end + 2).collect::<String>();
 
             if let Ok(message) = Message::try_from(line.as_str()) {
                 self.message_queue.borrow_mut().push(message);
@@ -98,7 +248,13 @@ impl<C> Stream<C>
         } else {
             let message = self.message_queue.borrow_mut().remove(0);
 
-            println!("IN>  {:#?}", message.command());
+            let secure = if self.inner_stream.borrow().secure() {
+                "secure"
+            } else {
+                "insecure"
+            };
+
+            println!("IN ({})>  {:#?}", secure, message.command());
 
             Ok(Some(message))
         }
@@ -108,9 +264,15 @@ impl<C> Stream<C>
                    where
                        T: ToMessage<C> + std::fmt::Debug,
     {
-        println!("OUT> {:#?}", msg_or_cmd);
+        let secure = if self.inner_stream.borrow().secure() {
+            "secure"
+        } else {
+            "insecure"
+        };
 
-        self.tcp_stream
+        println!("OUT ({})> {:#?}", secure, msg_or_cmd);
+
+        self.inner_stream
             .borrow_mut()
             .write(msg_or_cmd.into_message().to_string().as_bytes())?;
 
