@@ -25,7 +25,6 @@ impl Defaults for Charset {
 #[derive(Debug, Default)]
 pub struct Server {
     origin: Origin,
-    ports: (Vec<u16>, Vec<u16>),
     // secure, insecure
     password: Option<String>,
     motd: Option<String>,
@@ -46,14 +45,6 @@ impl Server {
 impl Server {
     pub fn origin(&self) -> &Origin {
         &self.origin
-    }
-
-    pub fn secure_ports(&self) -> &Vec<u16> {
-        &self.ports.0
-    }
-
-    pub fn insecure_ports(&self) -> &Vec<u16> {
-        &self.ports.1
     }
 
     pub fn users(&self) -> &Vec<RcUser> {
@@ -88,7 +79,6 @@ impl std::convert::TryFrom<&Origin> for Server {
         if let Origin::Server { .. } = origin {
             Ok(Server {
                 origin: origin.clone(),
-                ports: (Vec::new(), Vec::new()), // secure, insecure
                 password: None,
                 motd: None,
                 users: Vec::new(),

@@ -36,7 +36,7 @@ fn is_valid_first_rest(
     let illegal = &data[1..]
         .chars()
         .enumerate()
-        .filter(|(i, c)| charset_rem.find(|cs| c == &cs).is_none())
+        .filter(|(_, c)| charset_rem.find(|cs| c == &cs).is_none())
         .collect::<Vec<(usize, char)>>();
 
     if illegal.is_empty() {

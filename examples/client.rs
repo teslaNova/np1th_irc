@@ -13,7 +13,7 @@ fn main() -> Result<(), Box<std::error::Error>> {
         host: None,
     }, "avonarret");
 
-    let mut client = Client::connect("irc.freenode.org:6667", myself, None)?;
+    let client = Client::connect("irc.freenode.org:6667", myself, None)?;
     client.disconnect();
 
     Ok(())

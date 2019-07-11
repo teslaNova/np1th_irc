@@ -235,7 +235,6 @@ impl crate::command::Command for Command {
                     return Ok(Command::Join0 {}.into());
                 } else {
                     if r.parameters.len() >= 1 && r.parameters.len() <= 2 {
-                        let mut key_parts_count = 0usize;
                         let channel_parts = r.parameters[0].split(',').collect::<Vec<&str>>();
                         let key_parts = if r.parameters.len() == 2 {
                             r.parameters[1].split(',').collect::<Vec<&str>>()
@@ -439,8 +438,8 @@ impl ToString for Command {
                 ref password,
             } => format!("OPER {} {}", name, password),
             &UMode {
-                ref name,
-                ref modes,
+                /*ref name,
+                ref modes,*/..
             } => {
                 //format!("MODE {} {}", name, modes.to_string())
                 format!("")
@@ -487,8 +486,8 @@ impl ToString for Command {
                     .unwrap_or_default()
             ),
             &CMode {
-                ref channel,
-                ref modes,
+                /*ref channel,
+                ref modes,*/..
             } => format!(""),
             &Topic {
                 ref channel,
@@ -591,8 +590,8 @@ impl ToString for Command {
                     .unwrap_or_default()
             ),
             &Links {
-                ref server,
-                ref mask,
+                /*ref server,
+                ref mask,*/..
             } => format!(""), // none | mask | server, mask (in order)
             &Time { ref server } => format!(
                 "TIME{}",
@@ -637,22 +636,23 @@ impl ToString for Command {
             ),
 
             // Service
-            &ServList { ref mask, ref kind } => format!(""),
+            &ServList { /*ref mask, ref kind*/.. } => format!(""),
             &SQuery { ref name, ref text } => format!("SQUERY {} {}", name, text),
 
             // User
             &Who {
-                ref mask,
-                ref operators_only,
+                /*ref mask,
+                ref operators_only,*/
+                ..
             } => format!(""),
             &WhoIs {
-                ref server,
-                ref masks,
+                /*ref server,
+                ref masks,*/..
             } => format!(""),
             &WhoWas {
-                ref users,
+                /*ref users,
                 ref count,
-                ref server,
+                ref server,*/..
             } => format!(""),
 
             // Misc

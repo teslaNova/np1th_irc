@@ -32,8 +32,8 @@ impl<C> Stream<C>
     pub fn connect<A: ToSocketAddrs>(addr: A) -> Result<Self, Box<Error>> {
         let tcp_stream = TcpStream::connect(addr)?;
 
-        tcp_stream.set_nodelay(true);
-        tcp_stream.set_nonblocking(true);
+        let _ = tcp_stream.set_nodelay(true);
+        let _ = tcp_stream.set_nonblocking(true);
 
         Ok(Stream {
             tcp_stream: tcp_stream.into(),
@@ -42,11 +42,11 @@ impl<C> Stream<C>
     }
 
     pub fn close(self) {
-        self.tcp_stream.borrow_mut().shutdown(Shutdown::Both);
+        let _ = self.tcp_stream.borrow_mut().shutdown(Shutdown::Both);
     }
 
     pub fn set_timeout(&self, timeout: Duration) {
-        self.tcp_stream.borrow_mut().set_read_timeout(Some(timeout));
+        let _ = self.tcp_stream.borrow_mut().set_read_timeout(Some(timeout));
     }
 
     fn read_some(&self) -> Result<(), Box<Error>> {

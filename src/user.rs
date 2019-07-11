@@ -1,4 +1,3 @@
-use crate::channel::RcChannel;
 use crate::{
     channel::WeakChannel,
     mode::{user, Mode},
