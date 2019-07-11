@@ -154,8 +154,26 @@ impl<C> Stream<C>
     where
         C: Command,
 {
-    pub fn connect(host: &str, port: Port) -> Result<Self, Box<Error>> {
-        let mut tcp_stream = TcpStream::connect((host, port.port()))?;
+    pub fn connect(host: &str, port: Port, timeout: Option<std::time::Duration>) -> Result<Self, Box<Error>> {
+        let mut tcp_stream = if let Some(timeout) = timeout {
+            let mut last_err = None;
+            let mut stream = None;
+
+            for addr in (host, port.port()).to_socket_addrs()? {
+                match TcpStream::connect_timeout(&addr, timeout) {
+                    Ok(_stream) => stream = Some(_stream),
+                    Err(e) => last_err = Some(Box::new(e))
+                }
+            }
+
+            if stream.is_none() {
+                return Err(last_err.unwrap())
+            }
+
+            stream.unwrap()
+        } else {
+            TcpStream::connect((host, port.port()))?
+        };
 
         let mut stream = if port.secure() {
             let mut tls_stream = TlsConnector::builder()

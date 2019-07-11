@@ -1,5 +1,7 @@
 extern crate np1th_irc;
 
+use std::time::Duration;
+
 use np1th_irc::{
     connection::client::{Client, Port},
     user::User,
@@ -13,7 +15,15 @@ fn main() -> Result<(), Box<std::error::Error>> {
         host: None,
     }, "avonarret");
 
-    let client = Client::connect("irc.freenode.org", Port::Secure(7000), myself, None)?;
+    let client = Client::builder()
+        .port(Port::Insecure(6667))
+        .port(Port::Secure(7000))
+        .host("irc.freenode.org")
+        .user(myself)
+        .priortize_secure()
+        .timeout(Duration::from_secs(5))
+        .build()?;
+
     client.disconnect();
 
     Ok(())

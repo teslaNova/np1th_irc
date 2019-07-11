@@ -7,7 +7,7 @@ use np1th_irc::{command::client::Command::*, stream::{ClientStream, Port}};
 fn main() -> Result<(), Box<std::error::Error>> {
     println!("Trying to connect..");
 
-    if let Ok(stream) = ClientStream::connect("irc.freenode.org", Port::Secure(7000)) {
+    if let Ok(stream) = ClientStream::connect("irc.freenode.org", Port::Secure(7000), None) {
         println!("Connected..");
 
         stream

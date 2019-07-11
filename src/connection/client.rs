@@ -14,14 +14,22 @@ use std::{
 
 pub use crate::stream::Port;
 
+pub mod error {
+    impl_error!(MissingParameterError {parameter: String});
+    impl_error!(ConnectionError {error: Box<std::error::Error>});
+
+    impl_error!(InvalidPassword {});
+    impl_error!(Error {message: String});
+}
+
 #[derive(Default)]
 pub struct Builder {
     user: Option<User>,
     //password: Option<String>,
     host: String,
-
     ports: Vec<Port>,
     ports_filter: Vec<Box<Fn(&mut Vec<Port>)>>,
+    timeout: Option<std::time::Duration>,
 }
 
 impl Builder {
@@ -78,9 +86,9 @@ impl Builder {
         self.ports_filter.push(Box::new(move |ports| {
             ports.sort_by(|c1, c2| {
                 if c1.secure() && c2.insecure() {
-                    std::cmp::Ordering::Greater
-                } else if c1.insecure() && c2.secure() {
                     std::cmp::Ordering::Less
+                } else if c1.insecure() && c2.secure() {
+                    std::cmp::Ordering::Greater
                 } else {
                     std::cmp::Ordering::Equal
                 }
@@ -94,9 +102,9 @@ impl Builder {
         self.ports_filter.push(Box::new(move |ports| {
             ports.sort_by(|c1, c2| {
                 if c1.secure() && c2.insecure() {
-                    std::cmp::Ordering::Less
-                } else if c1.insecure() && c2.secure() {
                     std::cmp::Ordering::Greater
+                } else if c1.insecure() && c2.secure() {
+                    std::cmp::Ordering::Less
                 } else {
                     std::cmp::Ordering::Equal
                 }
@@ -104,6 +112,37 @@ impl Builder {
         }));
 
         self
+    }
+
+    pub fn timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.timeout = Some(timeout);
+
+        self
+    }
+
+    pub fn build(mut self) -> Result<Client, Box<std::error::Error>> {
+        for filter in self.ports_filter {
+            filter(&mut self.ports);
+        }
+
+        let user = match self.user {
+            Some(user) => user,
+            None => return Err(error::MissingParameterError::new(format!("User")))
+        };
+
+        let mut last_error = None;
+
+        for port in self.ports {
+            match ClientStream::connect(&self.host, port, self.timeout) {
+                Ok(stream) => {
+                    return Client::initialize(stream, user, None)
+                }
+
+                Err(e) => last_error = Some(e)
+            }
+        }
+
+        Err(last_error.unwrap())
     }
 }
 
@@ -113,11 +152,6 @@ pub struct Client {
     server: Server,
 }
 
-pub mod error {
-    impl_error!(InvalidPassword {});
-    impl_error!(Error {message: String});
-}
-
 impl Client {
     pub fn builder() -> Builder {
         Builder::default()
@@ -125,9 +159,7 @@ impl Client {
 }
 
 impl Client {
-    pub fn connect(host: &str, port: Port, myself: User, password: Option<&str>) -> Result<Self, Box<std::error::Error>> {
-        let stream = ClientStream::connect(host, port)?;
-
+    fn initialize(stream: ClientStream, myself: User, password: Option<&str>) -> Result<Self, Box<std::error::Error>> {
         let mut server_motd = String::new();
         let mut server_origin = None;
 
